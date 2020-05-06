@@ -20,7 +20,7 @@ def iou(pr, gt, eps=1e-7, threshold=None, activation='sigmoid'):
         pr = (pr > threshold).float()
             
     intersection = torch.sum(gt * pr)
-    union = torch(gt) + torch.sum(pr) - intersection + eps
+    union = torch.sum(gt) + torch.sum(pr) - intersection + eps
     return (intersection + eps) / union
 
 
@@ -61,8 +61,8 @@ class DiceLoss(nn.Module):
         self.eps = eps
 
     def forward(self, y_pr, y_gt):
-        return 1 - f_score(y_pr, y_gt, beta=1., eps=self.eps, threshold=None,
-            activation=self.activation)
+        return 1 - f_score(y_pr, y_gt, beta=1., eps=self.eps, 
+                threshold=None, activation=self.activation)
 
 
 class BCEDiceLoss(DiceLoss):
