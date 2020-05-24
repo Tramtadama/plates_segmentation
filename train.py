@@ -23,22 +23,31 @@ all_names, img_names_test, img_names_train, img_names_val = create_img_names(
 parser = argparse.ArgumentParser(description='plates train')
 parser.add_argument('--epochs', default=1, type=int)
 parser.add_argument('--data', default=None, type=str)
+parser.add_argument('--cuda', default=False, type=bool)
 parser.add_argument('--train_bs', default=1, type=int)
 parser.add_argument('--inf_bs', default=1, type=int)
+parser.add_argument('--test_mode', default=False, type=bool)
 args = parser.parse_args()
 
 with open(args.data + 'full_data.json') as json_file:
     data_dict = json.load(json_file)
 
-train_cut = []
-for name in img_names_train:
-    if name in for_inf_test:
-        train_cut.append(name)
+if args.test_mode:
+    train_cut = []
+    for name in img_names_train:
+        if name in for_inf_test:
+            train_cut.append(name)
 
-val_cut = []
-for name in img_names_val:
-    if name in for_inf_test:
-        val_cut.append(name)
+    val_cut = []
+    for name in img_names_val:
+        if name in for_inf_test:
+            val_cut.append(name)
+
+    train_names = train_cut[:8]
+    val_names = val_cut[:1]
+else:
+    train_names = img_names_train
+    val_names = img_names_val
 
 shape = (224, 224)
 train_batch_size = 8
@@ -46,9 +55,9 @@ inf_batch_size = 1
 
 loss = BCEDiceLoss()
 
-train_dset = Znacky_set(shape, train_cut[:8], y=data_dict, DIR=args.data
+train_dset = Znacky_set(shape, train_names, y=data_dict, DIR=args.data
         +'images/', aug_pool=aug_pool)
-val_dset = Znacky_set(shape, val_cut[:1], y=data_dict, DIR=args.data +
+val_dset = Znacky_set(shape, val_names, y=data_dict, DIR=args.data +
         'images/')
 test_dset = Znacky_set(shape, img_names_test, y=data_dict, DIR=args.data +
         'images/')
@@ -82,8 +91,11 @@ scheduler = CosineAnnealingLR(optim, Tmax, eta_min=0.003, last_epoch=-1)
 for epoch in tqdm(range(1+init_epoch, epochs + init_epoch + 1)):
     
     lrs.append(optim.param_groups[0]['lr'])
-
-    model = model.train().cuda()
+    
+    if args.cuda:
+        model = model.train().cuda()
+    else:
+        model = model.train()
 
     batch_train_loss_history = []
     batch_train_iou = []
@@ -92,15 +104,22 @@ for epoch in tqdm(range(1+init_epoch, epochs + init_epoch + 1)):
 
     for (imgs, labels, _) in tqdm(train_loader):
         
-        imgs, labels = imgs.cuda(), labels.cuda()
+        if args.cuda:
+            imgs, labels = imgs.cuda(), labels.cuda()
         optim.zero_grad()
         out = model(imgs)
-
+        
         batch_train_loss = loss(out, labels)
-        batch_train_iou = iou(out.cpu(), labels.cpu(), 
+
+        if args.cuda:
+            out = out.cpu()
+            labels = labels.cpu()
+            batch_train_loss = batch_train_loss.cpu()
+
+        batch_train_iou = iou(out, labels, 
                 threshold=0.5, activation="sigmoid")
 
-        train_loss += batch_train_loss.cpu().item()
+        train_loss += batch_train_loss.item()
         train_iou += batch_train_iou.item()
 
         batch_train_loss.backward()
@@ -122,8 +141,11 @@ for epoch in tqdm(range(1+init_epoch, epochs + init_epoch + 1)):
 
     val_loss = 0
     val_iou = 0
-
-    model.cpu().eval()
+    
+    if args.cuda:
+        model.cpu().eval()
+    else:
+        model.eval()
 
     with torch.no_grad():
         for imgs, labels, img_pth in tqdm(val_loader):
